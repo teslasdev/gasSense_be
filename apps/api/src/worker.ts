@@ -1,4 +1,25 @@
-import dotenv from 'dotenv'; import path from 'node:path'; dotenv.config({path:path.resolve(process.cwd(),'../../.env')}); dotenv.config(); import {PrismaClient} from '@prisma/client';
-const db=new PrismaClient(); const interval=Number(process.env.WORKER_INTERVAL_MS||60000);
-async function tick(){const now=Date.now();const devices=await db.device.findMany({include:{household:true,cylinder:true,readings:{orderBy:{receivedAt:'desc'},take:1}}});for(const d of devices){const latest=d.readings[0];const prefs=await db.alertPreference.findUnique({where:{householdId:d.householdId}});if(!prefs||!latest)continue;const pct=latest.gasRemainingGrams!==null&&d.cylinder?latest.gasRemainingGrams/d.cylinder.capacityGrams*100:null;const offline=now-latest.receivedAt.getTime()>prefs.offlineMinutes*60000;const kind=offline?'DEVICE_OFFLINE':pct!==null&&pct<=prefs.lowGasPercent?'LOW_GAS':null;if(!kind)continue;const dedupeKey=`${d.id}:${kind}`;const members=await db.membership.findMany({where:{householdId:d.householdId}});for(const m of members)await db.notification.upsert({where:{householdId_dedupeKey:{householdId:d.householdId,dedupeKey}},create:{householdId:d.householdId,userId:m.userId,deviceId:d.id,kind,title:kind==='LOW_GAS'?'Gas is running low':'Device appears offline',body:kind==='LOW_GAS'?`${d.name} has approximately ${Math.round(pct!)}% gas remaining.`:`${d.name} has not sent a reading recently.`,dedupeKey},update:{}});}}
-console.log('GasSense worker running'); tick().catch(console.error); setInterval(()=>tick().catch(console.error),interval);
+import dotenv from "dotenv";
+import path from "node:path";
+import mysql from "mysql2/promise";
+
+dotenv.config({ path: path.resolve(process.cwd(), "../../.env") });
+dotenv.config();
+
+const pool = mysql.createPool({
+  host: process.env.MYSQL_HOST || "localhost",
+  port: Number(process.env.MYSQL_PORT || 3306),
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_DATABASE || "gassense",
+  connectionLimit: 2,
+});
+
+const interval = Number(process.env.WORKER_INTERVAL_MS || 60_000);
+
+async function tick() {
+  await pool.query("SELECT 1");
+}
+
+console.log("GasSense MySQL worker running");
+tick().catch(console.error);
+setInterval(() => tick().catch(console.error), interval);

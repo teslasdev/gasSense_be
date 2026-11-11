@@ -1,14 +1,20 @@
 {
   "name": "gassense",
   "private": true,
-  "workspaces": ["apps/api"],
+  "workspaces": [
+    "apps/api"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w apps/api\" \"npm run worker -w apps/api\"",
     "build": "npm run build -w apps/api",
     "typecheck": "npm run typecheck -w apps/api",
-    "db:migrate": "npm run prisma:migrate -w apps/api",
-    "db:generate": "npm run prisma:generate -w apps/api",
-    "seed": "npm run seed -w apps/api"
+    "db:migrate": "npm run db:init -w apps/api",
+    "db:init": "npm run db:init -w apps/api"
   },
-  "devDependencies": { "concurrently": "^9.1.2" }
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "dependencies": {
+    "mysql2": "^3.24.6"
+  }
 }

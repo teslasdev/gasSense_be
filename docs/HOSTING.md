@@ -15,8 +15,11 @@ Create `.env` on the server and never commit it:
 
 ```env
 NODE_ENV=production
-DATABASE_URL=mysql://USER:PASSWORD@MYSQL_HOST:3306/gassense
-SESSION_SECRET=use-a-long-random-secret-at-least-32-characters
+MYSQL_HOST=your-digitalocean-mysql-host
+MYSQL_PORT=3306
+MYSQL_USER=madsounds_user
+MYSQL_PASSWORD=your-password
+MYSQL_DATABASE=gassense
 API_PORT=4000
 WEB_ORIGIN=https://admin.example.com
 API_URL=https://admin.example.com
@@ -33,8 +36,6 @@ npm run db:generate
 npm run db:migrate
 npm run build
 ```
-
-Run `npm run seed` only for a new demo installation. Do not run it on an existing production database unless demo data is intended.
 
 ## Start the services
 
@@ -140,8 +141,7 @@ For a 6 kg empty cylinder containing 6 kg of gas:
 ## Security checklist
 
 - Use HTTPS only.
-- Use a strong random `SESSION_SECRET`.
-- Never expose database URLs or device credentials to browser code.
+- Never expose database credentials to browser code.
 - Add admin authentication before exposing admin routes publicly.
 - Keep MySQL private and back it up regularly.
 - Treat gas ON/OFF commands as safety-critical.

@@ -11,8 +11,5 @@
             "node"
         ]
     },
-    "include": [
-        "src",
-        "prisma"
-    ]
+    "include": ["src"]
 }
