@@ -13,6 +13,10 @@ dotenv.config();
 const app = express();
 const port = Number(process.env.API_PORT || 4000);
 const webDir = path.basename(process.cwd()) === "api" ? path.resolve(process.cwd(), "../../web") : path.resolve(process.cwd(), "web");
+const allowedOrigins = (process.env.WEB_ORIGIN || "http://localhost:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 const estimatedUsageKgPerHour = 0.35;
 const estimatedUsageHoursPerDay = 2;
 const estimatedDailyUsageKg = estimatedUsageKgPerHour * estimatedUsageHoursPerDay;
@@ -114,7 +118,17 @@ function overview(sensor: Sensor) {
 
 async function listSensors() { const [rows] = await pool.query("SELECT * FROM sensors ORDER BY created_at DESC"); return Promise.all((rows as any[]).map(async (row) => { const sensor = await getSensor(row.sensor_id); return sensor ? overview(sensor) : null; })).then((items) => items.filter(Boolean)); }
 
-app.use(helmet()); app.use(cors({ origin: true })); app.use(express.json({ limit: "32kb" }));
+app.use(helmet());
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS origin not allowed: ${origin}`));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
+app.use(express.json({ limit: "32kb" }));
 app.get("/health", async (_r, s) => { try { await pool.query("SELECT 1"); s.json({ ok: true }); } catch { error(s, 503, "DATABASE_UNAVAILABLE", "MySQL is unavailable"); } });
 
 app.get("/api/v1/prototype/sensors", asyncH(async (_r, s) => s.json({ source: "mysql", scannedAt: new Date().toISOString(), sensors: await listSensors() })));

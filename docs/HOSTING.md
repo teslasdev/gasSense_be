@@ -26,6 +26,12 @@ API_URL=https://admin.example.com
 EMAIL_PROVIDER=log
 ```
 
+Set `WEB_ORIGIN` to the exact frontend origin, including protocol and port. Multiple origins may be comma-separated:
+
+```env
+WEB_ORIGIN=https://admin.example.com,https://www.example.com
+```
+
 Use a dedicated MySQL user. Do not use MySQL root in production.
 
 ## Install, migrate, and build
