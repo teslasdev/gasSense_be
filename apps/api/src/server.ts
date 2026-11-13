@@ -137,10 +137,18 @@ app.get("/api/v1/sensors", asyncH(async (_r, s) => s.json({ sensors: await listS
 app.get("/api/v1/admin/sensors", asyncH(async (_r, s) => s.json({ sensors: await listSensors() })));
 
 app.post("/api/v1/prototype/admin/sensors", asyncH(async (r, s) => {
-  const p = z.object({ sensorId: z.string().min(4).max(80).optional(), name: z.string().min(1).max(120), tareWeightKg: z.number().min(0).max(1000).default(6), gasCapacityKg: z.number().positive().max(1000).default(6), gasWeightKg: z.number().min(0).max(1000).optional() }).parse(r.body);
+  const p = z.object({ sensorId: z.string().min(4).max(80).optional(), name: z.string().min(1).max(120), tareWeightKg: z.number().min(0).max(1000).default(6), gasCapacityKg: z.number().positive().max(1000).default(6), gasWeightKg: z.number().min(0).max(1000).optional(), gasType: z.string().min(1).max(120).optional(), provider: z.string().min(1).max(120).optional() }).parse(r.body);
   const sensorId = p.sensorId || `GS-V2.1-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+  const existing = await getSensor(sensorId);
+  if (existing) {
+    const nextCapacity = p.gasCapacityKg;
+    const nextWeight = Math.min(p.gasWeightKg ?? existing.gasWeightKg, nextCapacity);
+    await pool.execute("UPDATE sensors SET name=?,tare_weight_kg=?,gas_capacity_kg=?,gas_weight_kg=?,day_start_gas_weight_kg=?,gas_type=COALESCE(?,gas_type),provider=COALESCE(?,provider),last_updated_at=? WHERE sensor_id=?", [p.name, p.tareWeightKg, nextCapacity, nextWeight, nextWeight, p.gasType ?? null, p.provider ?? null, new Date(), sensorId]);
+    const updated = await getSensor(sensorId);
+    return s.json({ success: true, updated: true, sensor: updated && overview(updated) });
+  }
   const now = new Date(); const serial = `${sensorId.replace("GS-V2.1-", "")}-0001`;
-  await pool.execute("INSERT INTO sensors (sensor_id,name,signal_strength,status,gas_valve_state,power_state,tare_weight_kg,gas_capacity_kg,gas_weight_kg,day_start_gas_weight_kg,serial_number,calibration_date,next_calibration_date,last_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [sensorId, p.name, -52, "READY_TO_PAIR", "CLOSED", "ON", p.tareWeightKg, p.gasCapacityKg, p.gasWeightKg ?? p.gasCapacityKg, p.gasWeightKg ?? p.gasCapacityKg, serial, now, addMonths(now, 6), now]);
+  await pool.execute("INSERT INTO sensors (sensor_id,name,signal_strength,status,gas_valve_state,power_state,tare_weight_kg,gas_capacity_kg,gas_weight_kg,day_start_gas_weight_kg,gas_type,provider,serial_number,calibration_date,next_calibration_date,last_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [sensorId, p.name, -52, "READY_TO_PAIR", "CLOSED", "ON", p.tareWeightKg, p.gasCapacityKg, p.gasWeightKg ?? p.gasCapacityKg, p.gasWeightKg ?? p.gasCapacityKg, p.gasType ?? "LPG (Propane/Butane)", p.provider ?? "Gas Nigeria Ltd.", serial, now, addMonths(now, 6), now]);
   const sensor = await getSensor(sensorId); s.status(201).json({ success: true, sensor: sensor && overview(sensor) });
 }));
 
