@@ -13,10 +13,6 @@ dotenv.config();
 const app = express();
 const port = Number(process.env.API_PORT || 4000);
 const webDir = path.basename(process.cwd()) === "api" ? path.resolve(process.cwd(), "../../web") : path.resolve(process.cwd(), "web");
-const allowedOrigins = (process.env.WEB_ORIGIN || "http://localhost:5173")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
 const estimatedUsageKgPerHour = 0.35;
 const estimatedUsageHoursPerDay = 2;
 const estimatedDailyUsageKg = estimatedUsageKgPerHour * estimatedUsageHoursPerDay;
@@ -120,11 +116,7 @@ async function listSensors() { const [rows] = await pool.query("SELECT * FROM se
 
 app.use(helmet());
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error(`CORS origin not allowed: ${origin}`));
-  },
-  credentials: true,
+  origin: true,
   methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
 }));
@@ -201,6 +193,11 @@ app.delete("/api/v1/prototype/sensors/:sensorId/pair", asyncH(async (r, s) => { 
 app.get("/api/v1/prototype/sensors/:sensorId/analytics", asyncH(async (r, s) => { const sensor = await getSensor(String(r.params.sensorId)); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); const period = z.enum(["daily", "weekly", "monthly"]).parse(String(r.query.period || "weekly")); const count = period === "daily" ? 24 : period === "weekly" ? 7 : 30; const [rows] = await pool.query("SELECT gas_remaining_grams,captured_at FROM sensor_readings WHERE sensor_id=? AND captured_at>=DATE_SUB(NOW(), INTERVAL ? DAY) ORDER BY captured_at ASC", [sensor.sensorId, period === "monthly" ? 30 : period === "weekly" ? 7 : 1]); const readings = rows as any[]; const buckets = Array.from({ length: count }, (_, i) => ({ label: period === "daily" ? `${String(i).padStart(2, "0")}:00` : `Day ${i + 1}`, usageKg: 0 })); let total = 0; for (let i = 1; i < readings.length; i++) { const used = Math.max(0, Number(readings[i - 1].gas_remaining_grams) - Number(readings[i].gas_remaining_grams)); total += used; const index = period === "daily" ? new Date(readings[i].captured_at).getHours() : Math.min(count - 1, Math.floor(i / Math.max(1, readings.length / count))); buckets[index].usageKg += used / 1000; } const duration = total > 0 ? Math.ceil(sensor.gasCapacityKg / (total / 1000 / (period === "monthly" ? 30 : period === "weekly" ? 7 : 1))) : Math.ceil(sensor.gasWeightKg / estimatedDailyUsageKg); s.json({ sensorId: sensor.sensorId, period, totalKg: Number((total / 1000).toFixed(2)), buckets: buckets.map((b) => ({ ...b, usageKg: Number(b.usageKg.toFixed(2)) })), insights: { cylinderDurationDays: duration, comparisonPercent: 0, peakCookingHours: [], hasData: readings.length > 1 } }); }));
 
 app.use(express.static(webDir)); app.get("/", (_r, s) => s.sendFile(path.join(webDir, "index.html")));
-app.use((e: unknown, _r: Request, s: Response, _n: NextFunction) => { if (e instanceof z.ZodError) return error(s, 422, "VALIDATION_ERROR", "Request validation failed"); console.error(e); return error(s, 500, "INTERNAL_ERROR", "Unexpected server error"); });
+app.use((e: unknown, _r: Request, s: Response, _n: NextFunction) => {
+  if (e instanceof z.ZodError) return error(s, 422, "VALIDATION_ERROR", "Request validation failed");
+  console.error(e);
+  const message = e instanceof Error ? e.message : String(e);
+  return s.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Unexpected server error", details: message } });
+});
 
 initDb().then(() => app.listen(port, () => console.log(`GasSense API listening on :${port}`))).catch((e) => { console.error("Unable to initialize MySQL", e); process.exit(1); });

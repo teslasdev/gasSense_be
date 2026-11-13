@@ -46,8 +46,8 @@ npm run build
 ## Start the services
 
 ```bash
-node apps/api/dist/src/server.js
-node apps/api/dist/src/worker.js
+node apps/api/dist/server.js
+node apps/api/dist/worker.js
 ```
 
 Run them under a process manager so they restart after crashes and reboots.
@@ -56,8 +56,8 @@ Run them under a process manager so they restart after crashes and reboots.
 
 ```bash
 npm install --global pm2
-pm2 start apps/api/dist/src/server.js --name gassense-api
-pm2 start apps/api/dist/src/worker.js --name gassense-worker
+pm2 start apps/api/dist/server.js --name gassense-api
+pm2 start apps/api/dist/worker.js --name gassense-worker
 pm2 save
 pm2 startup
 ```
