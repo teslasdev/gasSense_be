@@ -5,8 +5,8 @@
     "apps/api"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w apps/api\" \"npm run worker -w apps/api\"",
-    "build": "npm run build -w apps/api",
+    "dev": "node init && concurrently \"npm run dev -w apps/api\" \"npm run worker -w apps/api\"",
+    "build": "node init && npm run build -w apps/api",
     "typecheck": "npm run typecheck -w apps/api",
     "db:migrate": "npm run db:init -w apps/api",
     "db:init": "npm run db:init -w apps/api"
@@ -15,6 +15,8 @@
     "concurrently": "^9.1.2"
   },
   "dependencies": {
-    "mysql2": "^3.24.6"
+    "dotenv": "^8.2.0",
+    "mysql2": "^3.24.6",
+    "node-fetch": "^3.3.2"
   }
 }
