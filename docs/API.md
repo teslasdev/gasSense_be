@@ -138,6 +138,11 @@ GET /api/v1/sensors/GS-V2.1-A4F7/analytics?period=weekly
 
 Allowed periods are `daily`, `weekly`, and `monthly`.
 
+For `daily`, `buckets` contains six four-hour chart buckets labelled `12:00 AM`,
+`4:00 AM`, `8:00 AM`, `12:00 PM`, `4:00 PM`, and `8:00 PM`, matching the
+daily-consumption chart. `weekly` contains Monday through Friday and
+`monthly` contains four buckets labelled `Week 1` through `Week 4`.
+
 Response:
 
 ```json
@@ -177,7 +182,7 @@ Response:
 }
 ```
 
-The API calculates usage from decreases in valid `gasRemainingGrams` readings. It does not fabricate chart readings. If fewer than two valid readings exist, return the empty buckets and show an unavailable-data state in the frontend.
+The API calculates usage from decreases in valid `gasRemainingGrams` readings. It does not fabricate chart readings. If fewer than two valid readings exist, it returns the empty buckets and `insights.hasData: false`, allowing the frontend to show an unavailable-data state.
 
 For the no-login prototype, use the prototype route instead:
 

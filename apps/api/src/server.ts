@@ -68,6 +68,110 @@ function addMonths(value: Date, months: number) { const d = new Date(value); d.s
 function formatHour(hour: number) { return `${hour % 12 || 12}:00 ${hour >= 12 ? "PM" : "AM"}`; }
 function formatPeak(hours: number[]) { return hours.length ? `Dinner preparation peaks at ${formatHour(Math.min(...hours))} – ${formatHour(Math.min(23, Math.max(...hours) + 1))}.` : "Not enough data yet."; }
 
+type AnalyticsPeriod = "daily" | "weekly" | "monthly";
+type AnalyticsBucket = { label: string; usageKg: number };
+
+function roundKg(value: number) { return Number(value.toFixed(2)); }
+
+function analyticsBuckets(period: AnalyticsPeriod, now = new Date()): AnalyticsBucket[] {
+  if (period === "daily") {
+    return Array.from({ length: 6 }, (_, index) => {
+      const hour = index * 4;
+      return { label: formatHour(hour), usageKg: 0 };
+    });
+  }
+
+  if (period === "weekly") {
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const day = start.getDay();
+    start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+    return Array.from({ length: 5 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      return { label: date.toLocaleDateString("en-US", { weekday: "short" }), usageKg: 0 };
+    });
+  }
+
+  return Array.from({ length: 4 }, (_, index) => ({ label: `Week ${index + 1}`, usageKg: 0 }));
+}
+
+function bucketIndex(period: AnalyticsPeriod, capturedAt: Date, now = new Date()) {
+  if (period === "daily") return Math.min(5, Math.floor(capturedAt.getHours() / 4));
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  if (period === "weekly") {
+    const day = start.getDay();
+    start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
+  } else {
+    start.setDate(1);
+  }
+  const days = Math.floor((capturedAt.getTime() - start.getTime()) / 86400000);
+  if (days < 0 || (period === "weekly" && days >= 5) || (period === "monthly" && days >= 28)) return null;
+  return period === "weekly"
+    ? days
+    : Math.floor(days / 7);
+}
+
+async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
+  const now = new Date();
+  const days = period === "daily" ? 1 : period === "weekly" ? 7 : 31;
+  const [rows] = await pool.query(
+    "SELECT gas_remaining_grams,captured_at FROM sensor_readings WHERE sensor_id=? AND quality='VALID' AND captured_at>=DATE_SUB(NOW(), INTERVAL ? DAY) ORDER BY captured_at ASC",
+    [sensor.sensorId, days],
+  );
+  const readings = rows as Array<{ gas_remaining_grams: number; captured_at: string | Date }>;
+  const buckets = analyticsBuckets(period, now);
+  let totalGrams = 0;
+
+  for (let index = 1; index < readings.length; index += 1) {
+    const usedGrams = Math.max(0, Number(readings[index - 1].gas_remaining_grams) - Number(readings[index].gas_remaining_grams));
+    if (!usedGrams) continue;
+    totalGrams += usedGrams;
+    const bucket = bucketIndex(period, new Date(readings[index].captured_at), now);
+    if (bucket !== null) buckets[bucket].usageKg += usedGrams / 1000;
+  }
+
+  const totalKg = roundKg(totalGrams / 1000);
+  const periodDays = period === "daily" ? 1 : period === "weekly" ? 5 : 28;
+  const averageDailyKg = totalKg > 0 ? totalKg / periodDays : estimatedDailyUsageKg;
+  const peakCookingHours = buckets
+    .map((bucket, index) => ({ usageKg: bucket.usageKg, hour: period === "daily" ? index * 4 : null }))
+    .filter((bucket) => bucket.hour !== null && bucket.usageKg > 0)
+    .sort((left, right) => right.usageKg - left.usageKg)
+    .slice(0, 2)
+    .map((bucket) => bucket.hour as number)
+    .sort((left, right) => left - right);
+  const comparisonPercent = 0;
+
+  return {
+    sensorId: sensor.sensorId,
+    period,
+    totalKg,
+    buckets: buckets.map((bucket) => ({ ...bucket, usageKg: roundKg(bucket.usageKg) })),
+    insights: {
+      cylinderDurationDays: Math.ceil(sensor.gasWeightKg / averageDailyKg),
+      comparisonPercent,
+      peakCookingHours,
+      hasData: readings.length > 1,
+      details: {
+        cylinderDuration: {
+          title: "Your cylinder duration",
+          message: `You finish a cylinder every ${Math.ceil(sensor.gasWeightKg / averageDailyKg)} days.`,
+        },
+        consumptionComparison: {
+          title: "Consumption vs last period",
+          message: "Not enough data to compare periods yet.",
+        },
+        peakCooking: {
+          title: "Peak cooking hours",
+          message: formatPeak(peakCookingHours),
+        },
+      },
+    },
+  };
+}
+
 async function getSensor(sensorId: string): Promise<Sensor | null> {
   const [rows] = await pool.query("SELECT * FROM sensors WHERE sensor_id = ?", [sensorId]);
   const row = (rows as any[])[0];
@@ -190,7 +294,14 @@ app.get("/api/v1/prototype/sensors/:sensorId/device", asyncH(async (r, s) => { c
 app.post("/api/v1/prototype/sensors/:sensorId/recalibrate", asyncH(async (r, s) => { const sensor = await getSensor(String(r.params.sensorId)); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); const now = new Date(); await pool.execute("UPDATE sensors SET calibration_date=?, next_calibration_date=? WHERE sensor_id=?", [now, addMonths(now, 6), sensor.sensorId]); s.json({ success: true, sensorId: sensor.sensorId, calibrationDate: now, nextCalibrationDate: addMonths(now, 6) }); }));
 app.delete("/api/v1/prototype/sensors/:sensorId/pair", asyncH(async (r, s) => { const id = String(r.params.sensorId); const sensor = await getSensor(id); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); await pool.execute("UPDATE sensors SET status='READY_TO_PAIR', paired_at=NULL, gas_valve_state='CLOSED' WHERE sensor_id=?", [id]); s.json({ success: true, sensorId: id, status: "READY_TO_PAIR" }); }));
 
-app.get("/api/v1/prototype/sensors/:sensorId/analytics", asyncH(async (r, s) => { const sensor = await getSensor(String(r.params.sensorId)); if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found"); const period = z.enum(["daily", "weekly", "monthly"]).parse(String(r.query.period || "weekly")); const count = period === "daily" ? 24 : period === "weekly" ? 7 : 30; const [rows] = await pool.query("SELECT gas_remaining_grams,captured_at FROM sensor_readings WHERE sensor_id=? AND captured_at>=DATE_SUB(NOW(), INTERVAL ? DAY) ORDER BY captured_at ASC", [sensor.sensorId, period === "monthly" ? 30 : period === "weekly" ? 7 : 1]); const readings = rows as any[]; const buckets = Array.from({ length: count }, (_, i) => ({ label: period === "daily" ? `${String(i).padStart(2, "0")}:00` : `Day ${i + 1}`, usageKg: 0 })); let total = 0; for (let i = 1; i < readings.length; i++) { const used = Math.max(0, Number(readings[i - 1].gas_remaining_grams) - Number(readings[i].gas_remaining_grams)); total += used; const index = period === "daily" ? new Date(readings[i].captured_at).getHours() : Math.min(count - 1, Math.floor(i / Math.max(1, readings.length / count))); buckets[index].usageKg += used / 1000; } const duration = total > 0 ? Math.ceil(sensor.gasCapacityKg / (total / 1000 / (period === "monthly" ? 30 : period === "weekly" ? 7 : 1))) : Math.ceil(sensor.gasWeightKg / estimatedDailyUsageKg); s.json({ sensorId: sensor.sensorId, period, totalKg: Number((total / 1000).toFixed(2)), buckets: buckets.map((b) => ({ ...b, usageKg: Number(b.usageKg.toFixed(2)) })), insights: { cylinderDurationDays: duration, comparisonPercent: 0, peakCookingHours: [], hasData: readings.length > 1 } }); }));
+const analytics = asyncH(async (r, s) => {
+  const sensor = await getSensor(String(r.params.sensorId));
+  if (!sensor) return error(s, 404, "SENSOR_NOT_FOUND", "Sensor not found");
+  const period = z.enum(["daily", "weekly", "monthly"]).parse(String(r.query.period || "weekly"));
+  s.json(await buildAnalytics(sensor, period));
+});
+app.get("/api/v1/sensors/:sensorId/analytics", analytics);
+app.get("/api/v1/prototype/sensors/:sensorId/analytics", analytics);
 
 app.use(express.static(webDir)); app.get("/", (_r, s) => s.sendFile(path.join(webDir, "index.html")));
 app.use((e: unknown, _r: Request, s: Response, _n: NextFunction) => {
