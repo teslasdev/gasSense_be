@@ -150,6 +150,11 @@ Response:
   "sensorId": "GS-V2.1-A4F7",
   "period": "weekly",
   "totalKg": 3.47,
+  "currentReading": {
+    "gasRemainingKg": 8.02,
+    "gasCapacityKg": 12.5,
+    "capturedAt": "2026-11-24T10:15:00.000Z"
+  },
   "buckets": [
     { "label": "Mon", "usageKg": 0.45 },
     { "label": "Tue", "usageKg": 0.32 },
@@ -182,7 +187,7 @@ Response:
 }
 ```
 
-The API calculates usage from decreases in valid `gasRemainingGrams` readings. It does not fabricate chart readings. If fewer than two valid readings exist, it returns the empty buckets and `insights.hasData: false`, allowing the frontend to show an unavailable-data state.
+The API calculates usage from decreases in valid `gasRemainingGrams` readings. For the prototype, if fewer than two readings exist, it also reports any known consumption since the last refill/current baseline and returns the latest `currentReading`. If there is no known consumption yet, the buckets remain zero-filled and `insights.hasData` is false.
 
 For the no-login prototype, use the prototype route instead:
 

@@ -178,6 +178,10 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
   }>;
   const buckets = analyticsBuckets(period, now);
   let totalGrams = 0;
+  const knownUsageKg = Math.max(
+    0,
+    roundKg(sensor.dayStartGasWeightKg - sensor.gasWeightKg),
+  );
 
   for (let index = 1; index < readings.length; index += 1) {
     const usedGrams = Math.max(
@@ -193,6 +197,14 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
       now,
     );
     if (bucket !== null) buckets[bucket].usageKg += usedGrams / 1000;
+  }
+
+  if (readings.length < 2 && knownUsageKg > 0) {
+    const currentBucket = period === "daily"
+      ? Math.min(5, Math.floor(now.getHours() / 4))
+      : bucketIndex(period, now, now);
+    if (currentBucket !== null) buckets[currentBucket].usageKg += knownUsageKg;
+    totalGrams = knownUsageKg * 1000;
   }
 
   const totalKg = roundKg(totalGrams / 1000);
@@ -215,6 +227,11 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
     sensorId: sensor.sensorId,
     period,
     totalKg,
+    currentReading: {
+      gasRemainingKg: roundKg(sensor.gasWeightKg),
+      gasCapacityKg: roundKg(sensor.gasCapacityKg),
+      capturedAt: sensor.lastUpdatedAt,
+    },
     buckets: buckets.map((bucket) => ({
       ...bucket,
       usageKg: roundKg(bucket.usageKg),
@@ -223,7 +240,7 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
       cylinderDurationDays: Math.ceil(sensor.gasWeightKg / averageDailyKg),
       comparisonPercent,
       peakCookingHours,
-      hasData: readings.length > 1,
+      hasData: readings.length > 1 || knownUsageKg > 0,
       details: {
         cylinderDuration: {
           title: "Your cylinder duration",
