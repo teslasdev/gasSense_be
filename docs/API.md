@@ -140,8 +140,9 @@ Allowed periods are `daily`, `weekly`, and `monthly`.
 
 For `daily`, `buckets` contains six four-hour chart buckets labelled `12:00 AM`,
 `4:00 AM`, `8:00 AM`, `12:00 PM`, `4:00 PM`, and `8:00 PM`, matching the
-daily-consumption chart. `weekly` contains Monday through Friday and
-`monthly` contains four buckets labelled `Week 1` through `Week 4`.
+daily-consumption chart. `weekly` contains Monday through Sunday and
+`monthly` contains four buckets
+labelled `Week 1` through `Week 4`.
 
 Response:
 

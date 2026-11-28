@@ -124,7 +124,7 @@ function analyticsBuckets(
     start.setHours(0, 0, 0, 0);
     const day = start.getDay();
     start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
-    return Array.from({ length: 5 }, (_, index) => {
+    return Array.from({ length: 7 }, (_, index) => {
       const date = new Date(start);
       date.setDate(start.getDate() + index);
       return {
@@ -158,7 +158,7 @@ function bucketIndex(
   const days = Math.floor((capturedAt.getTime() - start.getTime()) / 86400000);
   if (
     days < 0 ||
-    (period === "weekly" && days >= 5) ||
+    (period === "weekly" && days >= 7) ||
     (period === "monthly" && days >= 28)
   )
     return null;
@@ -199,7 +199,9 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
     if (bucket !== null) buckets[bucket].usageKg += usedGrams / 1000;
   }
 
-  if (readings.length < 2 && knownUsageKg > 0) {
+  // Use the sensor's current baseline when there are not enough readings to
+  // calculate a decrease, or when readings exist but do not yet show one.
+  if (totalGrams === 0 && knownUsageKg > 0) {
     const currentBucket = period === "daily"
       ? Math.min(5, Math.floor(now.getHours() / 4))
       : bucketIndex(period, now, now);
@@ -208,7 +210,7 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
   }
 
   const totalKg = roundKg(totalGrams / 1000);
-  const periodDays = period === "daily" ? 1 : period === "weekly" ? 5 : 28;
+  const periodDays = period === "daily" ? 1 : period === "weekly" ? 7 : 28;
   const averageDailyKg =
     totalKg > 0 ? totalKg / periodDays : estimatedDailyUsageKg;
   const peakCookingHours = buckets
@@ -240,7 +242,7 @@ async function buildAnalytics(sensor: Sensor, period: AnalyticsPeriod) {
       cylinderDurationDays: Math.ceil(sensor.gasWeightKg / averageDailyKg),
       comparisonPercent,
       peakCookingHours,
-      hasData: readings.length > 1 || knownUsageKg > 0,
+      hasData: readings.length > 0 || knownUsageKg > 0,
       details: {
         cylinderDuration: {
           title: "Your cylinder duration",
